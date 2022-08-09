@@ -19,15 +19,9 @@ import (
 	"github.com/prometheus/exporter-toolkit/web"
 	webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 	"gopkg.in/alecthomas/kingpin.v2"
-
-	"github.com/mm-dict/pearl-exporter/config"
 )
 
 var (
-	sc = &config.SafeConfig{
-		C: &config.Config{},
-	}
-
 	configFile    = kingpin.Flag("config.file", "Pearl exporter configuration file.").Default("pearl.yml").String()
 	webConfig     = webflag.AddFlags(kingpin.CommandLine)
 	listenAddress = kingpin.Flag("web.listen-address", "The address to listen on for HTTP requests.").Default(":9115").String()
@@ -46,7 +40,7 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	probeInfoGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "probe_system_info",
 		Help: "Returns system info for the probed device",
-	})
+	}, []string{"firmware_version"})
 	probeRecordingGauge := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "probe_recording",
 		Help: "Returns whether the probed device is currently recording",
@@ -58,6 +52,9 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 
 	params := r.URL.Query()
 	target := params.Get("target")
+	channel := params.Get("channel")
+	user := params.Get("user")
+	password := params.Get("password")
 	if target == "" {
 		http.Error(w, "Target parameter is missing", http.StatusBadRequest)
 		return
@@ -70,18 +67,22 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	registry.MustRegister(probeSuccessGauge)
 	registry.MustRegister(probeDurationGauge)
 	registry.MustRegister(probeInfoGauge)
+	registry.MustRegister(probeRecordingGauge)
+	registry.MustRegister(probeStreamingGauge)
 
 	client := &http.Client{}
-	conf := sc.C
 
-	req, err := http.NewRequest("GET", target+"/admin/channel1/get_params.cgi?firmware_version&rec_enabled&bcast_disabled", nil)
-	req.SetBasicAuth(conf.username, conf.password)
+	url := target + "/admin/" + channel + "/get_params.cgi?firmware_version&rec_enabled&bcast_disabled"
+	level.Info(logger).Log("msg", "Probing url : "+url)
+
+	req, err := http.NewRequest("GET", url, nil)
+	req.SetBasicAuth(user, password)
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
 	bodyBytes, err := io.ReadAll(resp.Body)
 	bodyString := string(bodyBytes)
 
-	values := parseResponse(bodyString)
+	values := parseResponse(bodyString, logger)
 	duration := time.Since(start).Seconds()
 
 	probeDurationGauge.Set(duration)
@@ -90,15 +91,15 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	} else {
 		probeSuccessGauge.Set(1)
 		probeInfoGauge.With(prometheus.Labels{"firmware_version": values["firmware_version"]}).Set(1)
-		if values["rec_enabled"] == "true" {
+		if values["rec_enabled"] == "on" {
 			probeRecordingGauge.Set(1)
 		} else {
 			probeRecordingGauge.Set(0)
 		}
 		if values["bcast_disabled"] == "true" {
-			probeRecordingGauge.Set(0)
+			probeStreamingGauge.Set(0)
 		} else {
-			probeRecordingGauge.Set(1)
+			probeStreamingGauge.Set(1)
 		}
 		level.Info(logger).Log("msg", "Probe succeeded", "duration_seconds", duration)
 	}
@@ -107,12 +108,16 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	h.ServeHTTP(w, r)
 }
 
-func parseResponse(resp string) map[string]string {
-	var rex = regexp.MustCompile("(\\w+)=(\\w+)")
+func parseResponse(resp string, logger log.Logger) map[string]string {
+	level.Info(logger).Log("msg", "parsing "+resp)
+	//values := strings.split(resp, "\n")
+	var rex = regexp.MustCompile("([^=;\r\n]+) = ([^;\r\n]*)")
 	data := rex.FindAllStringSubmatch(resp, -1)
 
 	res := make(map[string]string)
 	for _, kv := range data {
+		level.Info(logger).Log("msg", "key "+kv[1])
+		level.Info(logger).Log("msg", "value "+kv[2])
 		k := kv[1]
 		v := kv[2]
 		res[k] = v

@@ -1,12 +1,12 @@
 package config
 
 import (
-	"path"
 	"strings"
 	"sync"
 
 	"os"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	cfg "github.com/mm-dict/pearl-exporter/config"
 )
@@ -38,9 +38,13 @@ func Init() Config {
 		"",
 	}
 
+	logger := log.NewLogfmtLogger(os.Stdout)
+	logger = level.NewFilter(logger, level.AllowInfo())
+	logger = log.With(logger, "caller", log.DefaultCaller)
+
 	channels := os.Getenv("CHANNELS")
 	if channels != "" {
-		appConfig.SetChannels(strings.Split(channels, ", "))
+		appConfig.SetChannels(strings.Split(channels, ", "), logger)
 	}
 	username := os.Getenv("USERNAME")
 	password := os.Getenv("PASSWORD")
@@ -54,9 +58,9 @@ func Init() Config {
 }
 
 // Overrides the entire list of repositories
-func (c *Config) SetChannels(channels []string) {
+func (c *Config) SetChannels(channels []string, logger log.Logger) {
 	c.channels = channels
-	c.setScrapeQueries()
+	c.setScrapeQueries(logger)
 }
 
 // SetAPIToken accepts a string oauth2 token for usage in http.request
@@ -71,30 +75,11 @@ func (c *Config) SetPassword(password string) {
 
 // Init populates the Config struct based on environmental runtime configuration
 // All URL's are added to the TargetURL's string array
-func (c *Config) setScrapeQueries() error {
-
-	queries := []string{}
-
-	opts := []string{"firmware_version", "rec_enabled", "bcast_disabled"} // Used to set the Github API to return 100 results per page (max)
+func (c *Config) setScrapeQueries(logger log.Logger) error {
 
 	if len(c.channels) == 0 {
 		level.Info(logger).Log("No targets specified. Only rate limit endpoint will be scraped")
 	}
-
-	// Append repositories to the array
-	if len(c.channels) > 0 {
-		for _, x := range c.channels {
-			y := path.Join("/admin/", x, "/get_params.cgi?firmware_version&rec_enabled&bcast_disabled")
-			q := y.Query()
-			for v := range opts {
-				q.Add(v)
-			}
-			y.RawQuery = q.Encode()
-			urls = append(urls, y.String())
-		}
-	}
-
-	c.targetURLs = urls
 
 	return nil
 }
