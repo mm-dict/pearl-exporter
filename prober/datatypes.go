@@ -1,4 +1,4 @@
-package exporter
+package prober
 
 type FirmwareVersion struct {
 	Status string

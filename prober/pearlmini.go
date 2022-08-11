@@ -1,4 +1,4 @@
-package exporter
+package prober
 
 import (
 	"encoding/json"
