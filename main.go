@@ -1,14 +1,13 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -29,42 +28,6 @@ var (
 	listenAddress = kingpin.Flag("web.listen-address", "The address to listen on for HTTP requests.").Default(":9115").String()
 )
 
-type FirmwareVersion struct {
-	Status string
-	Result string
-}
-
-type SystemStatus struct {
-	Date        string
-	Uptime      int64
-	CpuLoad     int64
-	CpuLoadHigh bool
-	cputemp     int64
-}
-
-type StorageStatus struct {
-	Status string
-	Result StorageStatusDetails
-}
-
-type StorageStatusDetails struct {
-	State string
-	Total int64
-	Free  int64
-}
-
-type RecorderStatusDetails struct {
-	State    string
-	Duration *int64
-	Active   *string
-	Total    *string
-}
-
-type RecorderStatus struct {
-	Id     string
-	Status []RecorderStatusDetails
-}
-
 func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 
 	probeSuccessGauge := prometheus.NewGauge(prometheus.GaugeOpts{
@@ -78,10 +41,14 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	probeInfoGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "probe_system_info",
 		Help: "Returns system info for the probed device",
-	}, []string{"firmware_version"})
+	}, []string{"firmware_version", "uptime"})
 	probeStorageGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "probe_storage",
 		Help: "Returns the current status for the storage devices attached",
+	}, []string{"type"})
+	probeCpuGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "probe_cpu_info",
+		Help: "Returns information regarding the systems cpu load and temperature",
 	}, []string{"type"})
 	probeRecordingGauge := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "probe_recording",
@@ -112,6 +79,7 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	registry.MustRegister(probeStorageGauge)
 	registry.MustRegister(probeRecordingGauge)
 	registry.MustRegister(probeStreamingGauge)
+	registry.MustRegister(probeCpuGauge)
 
 	client := &http.Client{}
 
@@ -133,11 +101,16 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 		level.Error(logger).Log("msg", "Probe failed", "duration_seconds", duration)
 	} else {
 		probeSuccessGauge.Set(1)
-		firmwareVersion := getFirmwareVersion(target, user, password, logger)
-		probeInfoGauge.With(prometheus.Labels{"firmware_version": firmwareVersion.Result}).Set(1)
-		storageInfo := getStorageInfo(target, user, password, logger)
+		firmwareVersion := exporter.getFirmwareVersion(target, user, password, logger)
+		systemInfo := exporter.getSystemInfo(target, user, password, logger)
+		probeInfoGauge.With(prometheus.Labels{"firmware_version": firmwareVersion.Result, "uptime": strconv.FormatInt(int64(systemInfo.Result.Uptime), 10)}).Set(1)
+		probeCpuGauge.WithLabelValues("load").Add(float64(systemInfo.Result.CpuLoad))
+		probeCpuGauge.WithLabelValues("load_high").Add(float64(bool2int(systemInfo.Result.CpuLoadHigh)))
+		probeCpuGauge.WithLabelValues("temp").Add(float64(systemInfo.Result.Cputemp))
+		storageInfo := exporter.getStorageInfo(target, user, password, logger)
 		probeStorageGauge.WithLabelValues("total").Add(float64(storageInfo.Result.Total))
 		probeStorageGauge.WithLabelValues("free").Add(float64(storageInfo.Result.Free))
+
 		if values["rec_enabled"] == "on" {
 			probeRecordingGauge.Set(1)
 		} else {
@@ -153,50 +126,6 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
-}
-
-func getFirmwareVersion(target string, user string, password string, logger log.Logger) FirmwareVersion {
-	var f FirmwareVersion
-	target = target + "/api/system/firmware/version"
-	response := doRequest(target, user, password, logger)
-	err := json.Unmarshal(response, &f)
-	if err != nil {
-		fmt.Println(err)
-	}
-	return f
-}
-
-func getStorageInfo(target string, user string, password string, logger log.Logger) StorageStatus {
-	var s StorageStatus
-	target = target + "/api/system/storages/main/status"
-	response := doRequest(target, user, password, logger)
-	err := json.Unmarshal(response, &s)
-	if err != nil {
-		fmt.Println(err)
-	}
-	return s
-}
-
-func doRequest(target string, user string, password string, logger log.Logger) []byte {
-	client := &http.Client{}
-
-	level.Info(logger).Log("msg", "Probing url : "+target)
-
-	req, err := http.NewRequest("GET", target, nil)
-	if err != nil {
-		fmt.Println(err)
-	}
-	req.SetBasicAuth(user, password)
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer resp.Body.Close()
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println(err)
-	}
-	return bodyBytes
 }
 
 func parseResponse(resp string, logger log.Logger) map[string]string {
