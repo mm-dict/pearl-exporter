@@ -4,16 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
+	"os"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 )
 
-func getFirmwareVersion(target string, user string, password string, logger log.Logger) FirmwareVersion {
+func GetFirmwareVersion(target string, user string, password string) FirmwareVersion {
 	var f FirmwareVersion
 	target = target + "/api/system/firmware/version"
-	response := doRequest(target, user, password, logger)
+	response := doRequest(target, user, password, "GET")
 	err := json.Unmarshal(response, &f)
 	if err != nil {
 		fmt.Println(err)
@@ -21,10 +22,21 @@ func getFirmwareVersion(target string, user string, password string, logger log.
 	return f
 }
 
-func getStorageInfo(target string, user string, password string, logger log.Logger) StorageStatus {
+func GetFirmwareUpdateAvailability(target string, user string, password string) FirmwareControl {
+	var f FirmwareControl
+	target = target + "/api/system/firmware/update/control/check"
+	response := doRequest(target, user, password, "POST")
+	err := json.Unmarshal(response, &f)
+	if err != nil {
+		fmt.Println(err)
+	}
+	return f
+}
+
+func GetStorageInfo(target string, user string, password string) StorageStatus {
 	var s StorageStatus
 	target = target + "/api/system/storages/main/status"
-	response := doRequest(target, user, password, logger)
+	response := doRequest(target, user, password, "GET")
 	err := json.Unmarshal(response, &s)
 	if err != nil {
 		fmt.Println(err)
@@ -32,10 +44,10 @@ func getStorageInfo(target string, user string, password string, logger log.Logg
 	return s
 }
 
-func getSystemInfo(target string, user string, password string, logger log.Logger) SystemStatus {
+func GetSystemInfo(target string, user string, password string) SystemStatus {
 	var s SystemStatus
 	target = target + "/api/system/status"
-	response := doRequest(target, user, password, logger)
+	response := doRequest(target, user, password, "GET")
 	fmt.Println(response)
 	err := json.Unmarshal(response, &s)
 	if err != nil {
@@ -44,12 +56,37 @@ func getSystemInfo(target string, user string, password string, logger log.Logge
 	return s
 }
 
-func doRequest(target string, user string, password string, logger log.Logger) []byte {
+func GetRecorderInfo(target string, user string, password string) RecorderStatus {
+	var r RecorderStatus
+	target = target + "/api/recorders/status"
+	response := doRequest(target, user, password, "GET")
+	err := json.Unmarshal(response, &r)
+	if err != nil {
+		fmt.Println(err)
+	}
+	return r
+}
+
+func GetChannelInfo(target string, user string, password string) ChannelStatus {
+	var c ChannelStatus
+	target = target + "/api/channels/status?publishers=true"
+	response := doRequest(target, user, password, "GET")
+	err := json.Unmarshal(response, &c)
+	if err != nil {
+		fmt.Println(err)
+	}
+	return c
+}
+
+func doRequest(target string, user string, password string, method string) []byte {
 	client := &http.Client{}
+	logger := log.NewLogfmtLogger(os.Stdout)
+	logger = level.NewFilter(logger, level.AllowInfo())
+	logger = log.With(logger, "caller", log.DefaultCaller)
 
 	level.Info(logger).Log("msg", "Probing url : "+target)
 
-	req, err := http.NewRequest("GET", target, nil)
+	req, err := http.NewRequest(method, target, nil)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -66,7 +103,7 @@ func doRequest(target string, user string, password string, logger log.Logger) [
 	return bodyBytes
 }
 
-func bool2int(b bool) int64 {
+func Bool2int(b bool) int64 {
 	if b {
 		return 1
 	}

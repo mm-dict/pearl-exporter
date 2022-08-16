@@ -18,6 +18,19 @@ type SystemStatusDetails struct {
 	Cputemp     int64
 }
 
+type FirmwareControl struct {
+	Status string
+	Result FirmwareControlDetails
+}
+
+type FirmwareControlDetails struct {
+	Status    string
+	Allowed   *string
+	Version   *string
+	timestamp int64
+	Changed   bool
+}
+
 type StorageStatus struct {
 	Status string
 	Result StorageStatusDetails
@@ -59,9 +72,9 @@ type ChannelStatusDetails struct {
 
 type ChannelStatusDetailsStatus struct {
 	State    string
-	Nosignal int64
-	Bitrate  int64
-	Duration int64
+	Nosignal float64
+	Bitrate  float64
+	Duration float64
 }
 
 type ChannelStatusDetailsPublishers struct {
