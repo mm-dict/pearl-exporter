@@ -58,6 +58,11 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 		Name:      "cpu_info",
 		Help:      "Returns information regarding the systems cpu load and temperature",
 	}, []string{"type"})
+	probeCpuTempGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Name:      "cpu_temp",
+		Help:      "Current temperature for the CPU",
+	})
 	probeRecorderGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      "recorder_info",
@@ -89,6 +94,7 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	registry.MustRegister(probeRecorderGauge)
 	registry.MustRegister(probeChannelsGauge)
 	registry.MustRegister(probeCpuGauge)
+	registry.MustRegister(probeCpuTempGauge)
 
 	level.Info(logger).Log("msg", "Probing target : "+target)
 	firmwareVersion := prober.GetFirmwareVersion(target, user, password)
@@ -104,7 +110,7 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	probeInfoGauge.With(prometheus.Labels{"firmware_version": firmwareVersion.Result, "firmware_update_availability": updateInfo.Result.Status, "uptime": strconv.FormatInt(int64(systemInfo.Result.Uptime), 10)}).Set(1)
 	probeCpuGauge.WithLabelValues("load").Add(float64(systemInfo.Result.CpuLoad))
 	probeCpuGauge.WithLabelValues("load_high").Add(float64(prober.Bool2int(systemInfo.Result.CpuLoadHigh)))
-	probeCpuGauge.WithLabelValues("temp").Add(float64(systemInfo.Result.Cputemp))
+	probeCpuTempGauge.Set(float64(systemInfo.Result.Cputemp))
 	probeStorageGauge.WithLabelValues("total").Add(float64(storageInfo.Result.Total))
 	probeStorageGauge.WithLabelValues("free").Add(float64(storageInfo.Result.Free))
 
