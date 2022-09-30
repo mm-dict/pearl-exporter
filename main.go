@@ -23,7 +23,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -119,42 +118,57 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	registry.MustRegister(probeCpuTempGauge)
 
 	level.Info(logger).Log("msg", "Probing target : "+target)
-	firmwareVersion := prober.GetFirmwareVersion(target, user, password)
-	systemInfo := prober.GetSystemInfo(target, user, password)
-	storageInfo := prober.GetStorageInfo(target, user, password)
-	channelInfo := prober.GetChannelInfo(target, user, password)
-	updateInfo := prober.GetFirmwareUpdateAvailability(target, user, password)
-	recorderInfo := prober.GetRecorderInfo(target, user, password)
+	firmwareVersion, firmwareVersionError := prober.GetFirmwareVersion(target, user, password)
+	systemInfo, systemInfoError := prober.GetSystemInfo(target, user, password)
+	storageInfo, storageInfoError := prober.GetStorageInfo(target, user, password)
+	channelInfo, channelInfoError := prober.GetChannelInfo(target, user, password)
+	updateInfo, updateInfoError := prober.GetFirmwareUpdateAvailability(target, user, password)
+	recorderInfo, recorderInfoError := prober.GetRecorderInfo(target, user, password)
 	duration := time.Since(start).Seconds()
 
 	probeDurationGauge.Set(duration)
-	probeSuccessGauge.Set(1)
-	probeInfoGauge.With(prometheus.Labels{"firmware_version": firmwareVersion.Result, "firmware_update_availability": updateInfo.Result.Status, "uptime": strconv.FormatInt(int64(systemInfo.Result.Uptime), 10)}).Set(1)
-	probeCpuGauge.WithLabelValues("load").Add(float64(systemInfo.Result.CpuLoad))
-	probeCpuGauge.WithLabelValues("load_high").Add(float64(prober.Bool2int(systemInfo.Result.CpuLoadHigh)))
-	probeCpuTempGauge.Set(float64(systemInfo.Result.Cputemp))
-	probeStorageGauge.WithLabelValues("total").Add(float64(storageInfo.Result.Total))
-	probeStorageGauge.WithLabelValues("free").Add(float64(storageInfo.Result.Free))
-
-	for key := range channelInfo.Result {
-		probeChannelsGauge.With(prometheus.Labels{"id": channelInfo.Result[key].Id,
-			"status": channelInfo.Result[key].Status.State, "type": "nosignal"}).Set(float64(channelInfo.Result[key].Status.Nosignal))
-		probeChannelsGauge.With(prometheus.Labels{"id": channelInfo.Result[key].Id,
-			"status": channelInfo.Result[key].Status.State, "type": "bitrate"}).Set(float64(channelInfo.Result[key].Status.Bitrate))
-		probeChannelsGauge.With(prometheus.Labels{"id": channelInfo.Result[key].Id,
-			"status": channelInfo.Result[key].Status.State, "type": "duration"}).Set(float64(channelInfo.Result[key].Status.Duration))
-	}
-	fmt.Println(recorderInfo)
-	for key := range recorderInfo.Result {
-		if recorderInfo.Result[key].Status.State == "stopped" {
-			probeRecorderGauge.With(prometheus.Labels{"id": recorderInfo.Result[key].Id}).Set(0)
-		} else {
-			probeRecorderGauge.With(prometheus.Labels{"id": recorderInfo.Result[key].Id}).Set(1)
+	if firmwareVersionError != nil {
+		probeSuccessGauge.Set(0)
+		level.Info(logger).Log("msg", "Probe failed", "duration_seconds", duration)
+	} else {
+		probeSuccessGauge.Set(1)
+		if updateInfoError == nil {
+			probeInfoGauge.With(prometheus.Labels{"firmware_version": firmwareVersion.Result, "firmware_update_availability": updateInfo.Result.Status, "uptime": strconv.FormatInt(int64(systemInfo.Result.Uptime), 10)}).Set(1)
 		}
 
-	}
+		if systemInfoError == nil {
+			probeCpuGauge.WithLabelValues("load").Add(float64(systemInfo.Result.CpuLoad))
+			probeCpuGauge.WithLabelValues("load_high").Add(float64(prober.Bool2int(systemInfo.Result.CpuLoadHigh)))
+			probeCpuTempGauge.Set(float64(systemInfo.Result.Cputemp))
+		}
 
-	level.Info(logger).Log("msg", "Probe succeeded", "duration_seconds", duration)
+		if storageInfoError == nil {
+			probeStorageGauge.WithLabelValues("total").Add(float64(storageInfo.Result.Total))
+			probeStorageGauge.WithLabelValues("free").Add(float64(storageInfo.Result.Free))
+		}
+
+		if channelInfoError == nil {
+			for key := range channelInfo.Result {
+				probeChannelsGauge.With(prometheus.Labels{"id": channelInfo.Result[key].Id,
+					"status": channelInfo.Result[key].Status.State, "type": "nosignal"}).Set(float64(channelInfo.Result[key].Status.Nosignal))
+				probeChannelsGauge.With(prometheus.Labels{"id": channelInfo.Result[key].Id,
+					"status": channelInfo.Result[key].Status.State, "type": "bitrate"}).Set(float64(channelInfo.Result[key].Status.Bitrate))
+				probeChannelsGauge.With(prometheus.Labels{"id": channelInfo.Result[key].Id,
+					"status": channelInfo.Result[key].Status.State, "type": "duration"}).Set(float64(channelInfo.Result[key].Status.Duration))
+			}
+		}
+
+		if recorderInfoError == nil {
+			for key := range recorderInfo.Result {
+				if recorderInfo.Result[key].Status.State == "stopped" {
+					probeRecorderGauge.With(prometheus.Labels{"id": recorderInfo.Result[key].Id}).Set(0)
+				} else {
+					probeRecorderGauge.With(prometheus.Labels{"id": recorderInfo.Result[key].Id}).Set(1)
+				}
+			}
+		}
+		level.Info(logger).Log("msg", "Probe succeeded", "duration_seconds", duration)
+	}
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)

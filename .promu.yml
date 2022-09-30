@@ -3,7 +3,7 @@ go:
     # .circle/config.yml should also be updated.
     version: 1.18
 repository:
-    path: github.com/mm-dict/pearl_exporter
+    path: github.com/mm-dict/pearl-exporter
 build:
     flags: -a -tags netgo
     ldflags: |
@@ -14,6 +14,5 @@ build:
         -X github.com/prometheus/common/version.BuildDate={{date "20060102-15:04:05"}}
 tarball:
     files:
-        - pearl.yml
         - LICENSE
         - NOTICE
