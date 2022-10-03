@@ -23,6 +23,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -94,6 +95,21 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 		Name:      "channels_info",
 		Help:      "Returns information regarding the configured channels and their publishers",
 	}, []string{"id", "status", "type"})
+	probeSDIStatusGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Name:      "sdi_status",
+		Help:      "Returns information regarding the SDI channel, sets the value to the current fps",
+	}, []string{"resolution"})
+	probeHDMIStatusGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Name:      "hdmi_status",
+		Help:      "Returns information regarding the HDMI channel, sets the value to the current fps",
+	}, []string{"resolution"})
+	probeRCAStatusGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Name:      "rca_audio_status",
+		Help:      "Returns the current audio levels for the RCA/line in  audio input",
+	}, []string{"channel", "type"})
 
 	params := r.URL.Query()
 	target := params.Get("target")
@@ -116,6 +132,9 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	registry.MustRegister(probeChannelsGauge)
 	registry.MustRegister(probeCpuGauge)
 	registry.MustRegister(probeCpuTempGauge)
+	registry.MustRegister(probeSDIStatusGauge)
+	registry.MustRegister(probeHDMIStatusGauge)
+	registry.MustRegister(probeRCAStatusGauge)
 
 	level.Info(logger).Log("msg", "Probing target : "+target)
 	firmwareVersion, firmwareVersionError := prober.GetFirmwareVersion(target, user, password)
@@ -124,6 +143,9 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 	channelInfo, channelInfoError := prober.GetChannelInfo(target, user, password)
 	updateInfo, updateInfoError := prober.GetFirmwareUpdateAvailability(target, user, password)
 	recorderInfo, recorderInfoError := prober.GetRecorderInfo(target, user, password)
+	sdiInfo, sdiInfoError := prober.GetSDIStatus(target, user, password)
+	hdmiInfo, hdmiInfoError := prober.GetHDMIStatus(target, user, password)
+	rcaInfo, rcaInfoError := prober.GetRCAVolumeStatus(target, user, password)
 	duration := time.Since(start).Seconds()
 
 	probeDurationGauge.Set(duration)
@@ -166,6 +188,27 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger) {
 					probeRecorderGauge.With(prometheus.Labels{"id": recorderInfo.Result[key].Id}).Set(1)
 				}
 			}
+		}
+
+		if sdiInfoError == nil {
+			probeSDIStatusGauge.With(prometheus.Labels{"resolution": sdiInfo.Result[0].Status.Video.Resolution}).Set(float64(sdiInfo.Result[0].Status.Video.Actual_fps))
+		} else {
+			fmt.Println(sdiInfoError)
+		}
+
+		if hdmiInfoError == nil {
+			probeHDMIStatusGauge.With(prometheus.Labels{"resolution": hdmiInfo.Result[0].Status.Video.Resolution}).Set(float64(hdmiInfo.Result[0].Status.Video.Actual_fps))
+		} else {
+			fmt.Println(hdmiInfoError)
+		}
+
+		if rcaInfoError == nil {
+			probeRCAStatusGauge.With(prometheus.Labels{"channel": "left", "type": "peak"}).Set(float64(rcaInfo.Result.Peak[0]))
+			probeRCAStatusGauge.With(prometheus.Labels{"channel": "right", "type": "peak"}).Set(float64(rcaInfo.Result.Peak[1]))
+			probeRCAStatusGauge.With(prometheus.Labels{"channel": "left", "type": "rms"}).Set(float64(rcaInfo.Result.Rms[0]))
+			probeRCAStatusGauge.With(prometheus.Labels{"channel": "right", "type": "rms"}).Set(float64(rcaInfo.Result.Rms[1]))
+		} else {
+			fmt.Println(rcaInfoError)
 		}
 		level.Info(logger).Log("msg", "Probe succeeded", "duration_seconds", duration)
 	}

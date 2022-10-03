@@ -108,5 +108,61 @@ type ChannelStatusDetailsPublishersDetails struct {
 	IsConfigured bool
 	Started      bool
 	State        string
-	duration     int64
+	Duration     int64
+}
+
+type SDIStatus struct {
+	Status string
+	Result []SDIStatusDetails
+}
+
+type SDIStatusDetails struct {
+	Id     string
+	Name   string
+	Status SDIConnectionStatus
+}
+
+type SDIConnectionStatus struct {
+	Video SDIVideoConnectionStatus
+}
+
+type SDIVideoConnectionStatus struct {
+	Actual_fps int
+	Interlaced bool
+	Resolution string
+	State      string
+	Vrr        int
+}
+
+type HDMIStatus struct {
+	Status string
+	Result []HDMIStatusDetails
+}
+
+type HDMIStatusDetails struct {
+	Id     string
+	Name   string
+	Status HDMIConnectionStatus
+}
+
+type HDMIConnectionStatus struct {
+	Video HDMIVideoConnectionStatus
+}
+
+type HDMIVideoConnectionStatus struct {
+	Actual_fps int
+	Interlaced bool
+	Resolution string
+	State      string
+	Vrr        int
+}
+
+type RCAVolumeStatus struct {
+	Status string
+	Result RCAVolumeDetails
+}
+
+type RCAVolumeDetails struct {
+	Peak []float64
+	Rms  []float64
 }

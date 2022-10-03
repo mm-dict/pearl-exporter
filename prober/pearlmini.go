@@ -118,6 +118,49 @@ func GetChannelInfo(target string, user string, password string) (*ChannelStatus
 	return &c, nil
 }
 
+func GetHDMIStatus(target string, user string, password string) (*HDMIStatus, error) {
+	h := HDMIStatus{}
+	target = target + "/api/sources/status?ids=D2P0.hdmi-a"
+	response, err := doRequest(target, user, password, "GET")
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(response, &h)
+	if err != nil {
+		return nil, err
+	}
+	return &h, nil
+}
+
+func GetSDIStatus(target string, user string, password string) (*SDIStatus, error) {
+	s := SDIStatus{}
+	target = target + "/api/sources/status?ids=D2P0.sdi"
+	response, err := doRequest(target, user, password, "GET")
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println(string(response))
+	err = json.Unmarshal(response, &s)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+func GetRCAVolumeStatus(target string, user string, password string) (*RCAVolumeStatus, error) {
+	s := RCAVolumeStatus{}
+	target = target + "/api/sources/D2P0.analog-b/audiolevels"
+	response, err := doRequest(target, user, password, "GET")
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(response, &s)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 func doRequest(target string, user string, password string, method string) ([]byte, error) {
 	client := &http.Client{}
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
