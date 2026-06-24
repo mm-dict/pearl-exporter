@@ -12,8 +12,14 @@ logger = logging.getLogger(__name__)
 BAO_ADDR = os.environ.get("BAO_ADDR") or os.environ.get("VAULT_ADDR")
 BAO_TOKEN = os.environ.get("BAO_TOKEN") or os.environ.get("VAULT_TOKEN")
 BAO_KV_MOUNT = os.environ.get("BAO_KV_MOUNT", "secret")
+# KV secrets engine version: 2 (default) reads at <mount>/data/<path>; 1 reads at
+# <mount>/<path> with no 'data' segment and a flat response shape.
+BAO_KV_VERSION = os.environ.get("BAO_KV_VERSION", "2")
 BAO_PATH_PREFIX = os.environ.get("BAO_PATH_PREFIX", "")
 BAO_CACERT = os.environ.get("BAO_CACERT") or os.environ.get("VAULT_CACERT")
+# Namespace (OpenBao/Vault Enterprise). hvac does not read this from the env, so
+# it must be passed to the client explicitly. None => root namespace.
+BAO_NAMESPACE = os.environ.get("BAO_NAMESPACE") or os.environ.get("VAULT_NAMESPACE")
 
 
 def get_credentials(hostname):
@@ -40,13 +46,23 @@ def get_credentials(hostname):
         client = hvac.Client(
             url=BAO_ADDR,
             token=BAO_TOKEN,
+            namespace=BAO_NAMESPACE,
             verify=BAO_CACERT if BAO_CACERT else True,
         )
-        resp = client.secrets.kv.v2.read_secret_version(
-            mount_point=BAO_KV_MOUNT,
-            path=secret_path,
-        )
-        data = resp["data"]["data"]
+        if BAO_KV_VERSION == "1":
+            # KV v1: path has no 'data' segment, secret is directly under 'data'.
+            resp = client.secrets.kv.v1.read_secret(
+                mount_point=BAO_KV_MOUNT,
+                path=secret_path,
+            )
+            data = resp["data"]
+        else:
+            # KV v2: read at <mount>/data/<path>, secret nested under data.data.
+            resp = client.secrets.kv.v2.read_secret_version(
+                mount_point=BAO_KV_MOUNT,
+                path=secret_path,
+            )
+            data = resp["data"]["data"]
         return data["username"], data["password"]
     except Exception as e:
         logger.warning(f"OpenBao credential lookup failed for '{secret_path}': {e}")

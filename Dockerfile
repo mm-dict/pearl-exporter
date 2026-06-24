@@ -1,4 +1,4 @@
-FROM python:trixie
+FROM python:3.13-trixie
 
 WORKDIR /sanic
 
