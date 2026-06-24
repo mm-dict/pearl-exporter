@@ -1,6 +1,7 @@
 import time
 import logging
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 from sanic import Sanic, response
 from prometheus_client import CollectorRegistry, Gauge, generate_latest, CONTENT_TYPE_LATEST
@@ -80,112 +81,58 @@ def run_probe(target, user, password):
     probe_finished_events = Gauge('finished_events', 'Returns the number of finished events', namespace=NAMESPACE, registry=registry)
 
     start_time = time.time()
+    logger.info(f"Probing target : {target}")
+
+    # Fetch every endpoint concurrently over one keep-alive session. Each task is
+    # independent: a failure records None for that key only, so one bad call no longer
+    # suppresses every other metric. probe_success reflects whether all calls succeeded.
+    tasks = {
+        "firmware": lambda s: prober.get_firmware_version(target, user, password, session=s).get('result', 'unknown'),
+        "system": lambda s: prober.get_system_info(target, user, password, session=s).get('result'),
+        "storage": lambda s: prober.get_storage_info(target, user, password, session=s).get('result'),
+        "channels": lambda s: prober.get_channel_info(target, user, password, session=s).get('result'),
+        "recorders": lambda s: prober.get_recorder_info(target, user, password, session=s).get('result'),
+        "sources": lambda s: prober.get_sources_status(target, user, password, session=s).get('result'),
+        "rca": lambda s: prober.get_rca_volume_status(target, user, password, session=s).get('result'),
+        "xlr": lambda s: prober.get_xlr_volume_status(target, user, password, session=s).get('result'),
+        "finished": lambda s: prober.get_finished_events(target, user, password, session=s),
+        "scheduled": lambda s: prober.get_scheduled_events(target, user, password, session=s),
+    }
+
+    data = {}
     success = True
-    
+    session = prober.new_session()
     try:
-        logger.info(f"Probing target : {target}")
-        
-        # Firmware Version
-        try:
-            firmware_data = prober.get_firmware_version(target, user, password)
-            firmware_version = firmware_data.get('result', 'unknown')
-        except Exception as e:
-            logger.error(f"Error fetching firmware version: {e}")
-            success = False
-            firmware_version = None
+        with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+            futures = {key: pool.submit(fn, session) for key, fn in tasks.items()}
+            for key, future in futures.items():
+                try:
+                    data[key] = future.result()
+                except Exception as e:
+                    logger.error(f"Error fetching {key}: {e}")
+                    data[key] = None
+                    success = False
+    finally:
+        session.close()
 
-        # System Info
-        system_info = None
-        try:
-            if success:
-                system_info_data = prober.get_system_info(target, user, password)
-                system_info = system_info_data.get('result')
-        except Exception as e:
-            logger.error(f"Error fetching system info: {e}")
+    firmware_version = data.get("firmware")
+    system_info = data.get("system")
+    storage_info = data.get("storage")
+    channel_info = data.get("channels")
+    recorder_info = data.get("recorders")
+    # SDI + HDMI come back in one list; split by source id.
+    sources = data.get("sources") or []
+    sdi_info = [s for s in sources if s.get('id') == 'D2P0.sdi']
+    hdmi_info = [s for s in sources if s.get('id') == 'D2P0.hdmi-a']
+    rca_info = data.get("rca")
+    xlr_info = data.get("xlr")
+    finished_events = data.get("finished")
+    scheduled_events = data.get("scheduled")
 
-        # Storage Info
-        storage_info = None
-        try:
-            if success:
-                storage_info_data = prober.get_storage_info(target, user, password)
-                storage_info = storage_info_data.get('result')
-        except Exception as e:
-            logger.error(f"Error fetching storage info: {e}")
-
-        # Channel Info
-        channel_info = None
-        try:
-            if success:
-                channel_info_data = prober.get_channel_info(target, user, password)
-                channel_info = channel_info_data.get('result')
-        except Exception as e:
-            logger.error(f"Error fetching channel info: {e}")
-
-        # Recorder Info
-        recorder_info = None
-        try:
-            if success: 
-                recorder_info_data = prober.get_recorder_info(target, user, password)
-                recorder_info = recorder_info_data.get('result')
-        except Exception as e:
-            logger.error(f"Error fetching recorder info: {e}")
-
-        # SDI Info
-        sdi_info = None
-        try:
-            if success:
-                sdi_info_data = prober.get_sdi_status(target, user, password)
-                sdi_info = sdi_info_data.get('result')
-        except Exception as e:
-            logger.error(f"Error fetching SDI info: {e}")
-
-        # HDMI Info
-        hdmi_info = None
-        try:
-            if success:
-                hdmi_info_data = prober.get_hdmi_status(target, user, password)
-                hdmi_info = hdmi_info_data.get('result')
-        except Exception as e:
-            logger.error(f"Error fetching HDMI info: {e}")
-
-        # RCA Info
-        rca_info = None
-        try:
-            if success:
-                rca_info_data = prober.get_rca_volume_status(target, user, password)
-                rca_info = rca_info_data.get('result')
-        except Exception as e:
-            logger.error(f"Error fetching RCA info: {e}")
-
-        # XLR Info
-        xlr_info = None
-        try:
-            if success:
-                xlr_info_data = prober.get_xlr_volume_status(target, user, password)
-                xlr_info = xlr_info_data.get('result')
-        except Exception as e:
-            logger.error(f"Error fetching XLR info: {e}")
-
-        # Finished Events
-        finished_events = None
-        try:
-            if success:
-                finished_events = prober.get_finished_events(target, user, password)
-        except Exception as e:
-            logger.error(f"Error fetching finished events: {e}")
-
-        # Scheduled Events
-        scheduled_events = None
-        try:
-            if success:
-                scheduled_events = prober.get_scheduled_events(target, user, password)
-        except Exception as e:
-            logger.error(f"Error fetching scheduled events: {e}")
-
-
+    try:
         # Update Metrics
-        
-        if success and firmware_version and system_info:
+
+        if firmware_version and system_info:
             probe_info.labels(firmware_version=firmware_version, uptime=str(system_info.get('uptime', 0))).set(1)
 
         if system_info:
@@ -253,7 +200,9 @@ def run_probe(target, user, password):
 
         if finished_events:
             probe_finished_events.set(finished_events.get("number"))
-            probe_last_recording.set(finished_events.get("last_recording"))
+            last_recording = finished_events.get("last_recording")
+            if last_recording is not None:
+                probe_last_recording.set(last_recording)
 
         probe_success.set(1 if success else 0)
 

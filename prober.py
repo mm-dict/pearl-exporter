@@ -1,5 +1,4 @@
 import requests
-import json
 import logging
 
 # Configure logging
@@ -8,82 +7,78 @@ logger = logging.getLogger(__name__)
 
 requests.packages.urllib3.disable_warnings()
 
-def do_request(target, user, password, method="GET"):
-    url = target
+def new_session():
+    """A keep-alive session for the device's self-signed cert (verify=False)."""
+    session = requests.Session()
+    session.verify = False  # InsecureSkipVerify: true
+    return session
+
+def do_request(url, user, password, method="GET", session=None):
+    requester = session if session is not None else requests
     try:
         logger.info(f"Probing url : {url}")
-        response = requests.request(
+        response = requester.request(
             method,
             url,
             auth=(user, password),
             verify=False,  # InsecureSkipVerify: true
-            timeout=5 # Good practice to add timeout
+            timeout=5,  # Good practice to add timeout
         )
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         logger.error(f"Request failed: {e}")
         raise
-    except requests.exceptions.Timeout as e:
-        logger.error(f"Request timed out: {e}")
-        raise
 
-def get_firmware_version(target, user, password):
+def get_firmware_version(target, user, password, session=None):
     url = f"{target}/api/system/firmware/version"
-    return do_request(url, user, password)
+    return do_request(url, user, password, session=session)
 
-def get_firmware_update_availability(target, user, password):
-    url = f"{target}/api/system/firmware/update/control/check"
-    return do_request(url, user, password, method="POST")
-
-def get_storage_info(target, user, password):
+def get_storage_info(target, user, password, session=None):
     url = f"{target}/api/system/storages/main/status"
-    return do_request(url, user, password)
+    return do_request(url, user, password, session=session)
 
-def get_system_info(target, user, password):
+def get_system_info(target, user, password, session=None):
     url = f"{target}/api/system/status"
-    return do_request(url, user, password)
+    return do_request(url, user, password, session=session)
 
-def get_recorder_info(target, user, password):
+def get_recorder_info(target, user, password, session=None):
     url = f"{target}/api/recorders/status"
-    return do_request(url, user, password)
+    return do_request(url, user, password, session=session)
 
-def get_channel_info(target, user, password):
+def get_channel_info(target, user, password, session=None):
     url = f"{target}/api/channels/status?publishers=true"
-    return do_request(url, user, password)
+    return do_request(url, user, password, session=session)
 
-def get_hdmi_status(target, user, password):
-    url = f"{target}/api/sources/status?ids=D2P0.hdmi-a"
-    return do_request(url, user, password)
+def get_sources_status(target, user, password, session=None):
+    """SDI + HDMI in a single call; caller splits the result list by source id."""
+    url = f"{target}/api/sources/status?ids=D2P0.hdmi-a,D2P0.sdi"
+    return do_request(url, user, password, session=session)
 
-def get_sdi_status(target, user, password):
-    url = f"{target}/api/sources/status?ids=D2P0.sdi"
-    return do_request(url, user, password)
-
-def get_rca_volume_status(target, user, password):
+def get_rca_volume_status(target, user, password, session=None):
     url = f"{target}/api/sources/D2P0.analog-a/audiolevels"
-    return do_request(url, user, password)
+    return do_request(url, user, password, session=session)
 
-def get_xlr_volume_status(target, user, password):
+def get_xlr_volume_status(target, user, password, session=None):
     url = f"{target}/api/sources/D2P0.analog-b/audiolevels"
-    return do_request(url, user, password)
+    return do_request(url, user, password, session=session)
 
-def get_finished_events(target, user, password):
+def get_finished_events(target, user, password, session=None):
     url = f"{target}/api/schedule/events?status=finished"
-    result = do_request(url, user, password)
-    finished_recordings = len(result.get("result"))
-    logger.info(result.get("result")[-1])
-    last_recording = result.get("result")[-1].get("start")
+    result = do_request(url, user, password, session=session)
+    events = result.get("result") or []
+    finished_recordings = len(events)
+    last_recording = events[-1].get("start") if events else None
 
     return {
             "number": finished_recordings,
             "last_recording": last_recording
     }
-    
 
-def get_scheduled_events(target, user, password):
+
+def get_scheduled_events(target, user, password, session=None):
     url = f"{target}/api/schedule/events?status=scheduled"
-    result = do_request(url, user, password)
-    scheduled_recordings = len(result.get("result"))
+    result = do_request(url, user, password, session=session)
+    scheduled_recordings = len(result.get("result") or [])
 
-    return scheduled_recordings;
+    return scheduled_recordings
