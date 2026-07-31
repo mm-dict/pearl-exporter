@@ -31,19 +31,19 @@ def do_request(url, user, password, method="GET", session=None):
         raise
 
 def get_firmware_version(target, user, password, session=None):
-    url = f"{target}/api/system/firmware/version"
+    url = f"{target}/api/v2.0/system/firmware"
     return do_request(url, user, password, session=session)
 
 def get_storage_info(target, user, password, session=None):
-    url = f"{target}/api/system/storages/main/status"
+    url = f"{target}/api/v2.0/system/storages/main/status"
     return do_request(url, user, password, session=session)
 
 def get_system_info(target, user, password, session=None):
-    url = f"{target}/api/system/status"
+    url = f"{target}/api/v2.0/system/status"
     return do_request(url, user, password, session=session)
 
 def get_recorder_info(target, user, password, session=None):
-    url = f"{target}/api/recorders/status"
+    url = f"{target}/api/v2.0/recorders/status"
     return do_request(url, user, password, session=session)
 
 def get_channel_info(target, user, password, session=None):
@@ -64,7 +64,7 @@ def get_xlr_volume_status(target, user, password, session=None):
     return do_request(url, user, password, session=session)
 
 def get_finished_events(target, user, password, session=None):
-    url = f"{target}/api/schedule/events?status=finished"
+    url = f"{target}/api/v2.0/schedule/events?status=finished"
     result = do_request(url, user, password, session=session)
     events = result.get("result") or []
     finished_recordings = len(events)
@@ -77,7 +77,7 @@ def get_finished_events(target, user, password, session=None):
 
 
 def get_scheduled_events(target, user, password, session=None):
-    url = f"{target}/api/schedule/events?status=scheduled"
+    url = f"{target}/api/v2.0/schedule/events?status=scheduled"
     result = do_request(url, user, password, session=session)
     scheduled_recordings = len(result.get("result") or [])
 

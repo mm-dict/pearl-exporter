@@ -136,9 +136,9 @@ def run_probe(target, user, password):
             probe_info.labels(firmware_version=firmware_version, uptime=str(system_info.get('uptime', 0))).set(1)
 
         if system_info:
-            probe_cpu.labels(type="load").inc(float(system_info.get('cpu_load', 0)))
+            probe_cpu.labels(type="load").inc(float(system_info.get('cpuload', 0)))
             # Bool2int logic
-            load_high = 1 if system_info.get('cpu_load_high') else 0
+            load_high = 1 if system_info.get('cpuload_high') else 0
             probe_cpu.labels(type="load_high").inc(load_high)
             probe_cpu_temp.set(float(system_info.get('cputemp', 0)))
 
