@@ -63,8 +63,8 @@ def run_probe(target, user, password):
     registry = CollectorRegistry()
     
     # Define Metrics
-    probe_success = Gauge('probe_success', 'Displays whether or not the probe was a success', namespace=NAMESPACE, registry=registry)
-    probe_duration = Gauge('probe_duration_seconds', 'Returns how long the probe took to complete in seconds', namespace=NAMESPACE, registry=registry)
+    probe_success = Gauge('probe_success', 'Displays whether or not the probe was a success', registry=registry)
+    probe_duration = Gauge('probe_duration_seconds', 'Returns how long the probe took to complete in seconds', registry=registry)
     
     probe_info = Gauge('system_info', 'Returns system info for the probed device', ['firmware_version', 'uptime'], namespace=NAMESPACE, registry=registry)
     probe_storage = Gauge('storage', 'Returns the current status for the storage devices attached', ['type'], namespace=NAMESPACE, registry=registry)

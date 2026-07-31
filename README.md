@@ -105,8 +105,8 @@ curl "http://localhost:9115/probe?target=http://pearl.local&user=admin&password=
 
 ### Exposed Metrics
 
--   `pearl_probe_success`: Displays whether or not the probe was a success.
--   `pearl_probe_duration_seconds`: Returns how long the probe took to complete in seconds.
+-   `probe_success`: Displays whether or not the probe was a success.
+-   `probe_duration_seconds`: Returns how long the probe took to complete in seconds.
 -   `pearl_system_info`: Returns system info for the probed device (labels: `firmware_version`, `uptime`).
 -   `pearl_storage`: Returns the current status for the storage devices attached (labels: `type`).
 -   `pearl_cpu_info`: Returns information regarding the system's CPU load (labels: `type`).
