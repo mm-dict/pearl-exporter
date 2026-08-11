@@ -66,7 +66,7 @@ def run_probe(target, user, password):
     probe_success = Gauge('probe_success', 'Displays whether or not the probe was a success', registry=registry)
     probe_duration = Gauge('probe_duration_seconds', 'Returns how long the probe took to complete in seconds', registry=registry)
     
-    probe_info = Gauge('system_info', 'Returns system info for the probed device', ['firmware_version', 'uptime'], namespace=NAMESPACE, registry=registry)
+    probe_info = Gauge('system_info', 'Returns system info for the probed device', ['version', 'revision', 'product_id', 'product_name', 'uptime'], namespace=NAMESPACE, registry=registry)
     probe_storage = Gauge('storage', 'Returns the current status for the storage devices attached', ['type'], namespace=NAMESPACE, registry=registry)
     probe_cpu = Gauge('cpu_info', 'Returns information regarding the systems cpu load and temperature', ['type'], namespace=NAMESPACE, registry=registry)
     probe_cpu_temp = Gauge('cpu_temp', 'Current temperature for the CPU', namespace=NAMESPACE, registry=registry)
@@ -87,7 +87,7 @@ def run_probe(target, user, password):
     # independent: a failure records None for that key only, so one bad call no longer
     # suppresses every other metric. probe_success reflects whether all calls succeeded.
     tasks = {
-        "firmware": lambda s: prober.get_firmware_version(target, user, password, session=s).get('result', 'unknown'),
+        "firmware": lambda s: prober.get_firmware_version(target, user, password, session=s).get('result', {}),
         "system": lambda s: prober.get_system_info(target, user, password, session=s).get('result'),
         "storage": lambda s: prober.get_storage_info(target, user, password, session=s).get('result'),
         "channels": lambda s: prober.get_channel_info(target, user, password, session=s).get('result'),
@@ -133,7 +133,13 @@ def run_probe(target, user, password):
         # Update Metrics
 
         if firmware_version and system_info:
-            probe_info.labels(firmware_version=firmware_version, uptime=str(system_info.get('uptime', 0))).set(1)
+            probe_info.labels(
+                version=firmware_version.get('version', 'unknown'),
+                revision=firmware_version.get('revision', 'unknown'),
+                product_id=str(firmware_version.get('product_id', 'unknown')),
+                product_name=firmware_version.get('product_name', 'unknown'),
+                uptime=str(system_info.get('uptime', 0)),
+            ).set(1)
 
         if system_info:
             probe_cpu.labels(type="load").inc(float(system_info.get('cpuload', 0)))
